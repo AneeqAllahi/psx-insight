@@ -17,6 +17,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { PortfolioStarButton } from '@/components/portfolio-star-button';
 import { useMarketStatus } from '@/hooks/useMarketStatus';
 import type { CompanyInfo, Dividend, Fundamentals, Kline, Tick, Timeframe } from '@/lib/types';
 
@@ -192,6 +193,7 @@ function StockHeader({
         <div>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-4xl font-semibold text-white">{symbol}</h1>
+            <PortfolioStarButton symbol={symbol} currentPrice={tick?.price} />
             {tick ? (
               <span className={`rounded border px-3 py-1 text-xs font-semibold ${marketStateClass(tick.st)}`}>
                 {tick.st}
