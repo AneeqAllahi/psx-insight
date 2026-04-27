@@ -19,21 +19,18 @@ interface SectorStatsResponse {
   updatedAt: number;
 }
 
-interface SectorDetailRow {
+interface MarketRow {
   symbol: string;
-  price: number;
-  change: number;
-  changePercent: number;
-  volume: number;
-  value: number;
-  state: 'up' | 'down' | 'unchanged';
+  price: number | null;
+  change: number | null;
+  changePercent: number | null;
+  volume: number | null;
+  value: number | null;
+  sector: string;
 }
 
-interface SectorDetailResponse {
-  sector: string;
-  summary: SectorData;
-  rows: SectorDetailRow[];
-  missingSymbols: string[];
+interface MarketsResponse {
+  rows: MarketRow[];
   updatedAt: number;
 }
 
@@ -96,12 +93,12 @@ async function fetchSectorStats(): Promise<SectorStatsResponse> {
   return res.json();
 }
 
-async function fetchSectorDetail(sector: string): Promise<SectorDetailResponse> {
-  const res = await fetch(`/api/market/sector?name=${encodeURIComponent(sector)}`, { cache: 'no-store' });
+async function fetchMarkets(): Promise<MarketsResponse> {
+  const res = await fetch('/api/markets?scope=all', { cache: 'no-store' });
 
   if (!res.ok) {
     const payload = await res.json().catch(() => null);
-    throw new Error(payload?.error || 'Unable to load sector detail');
+    throw new Error(payload?.error || 'Unable to load market rows');
   }
 
   return res.json();
@@ -193,16 +190,35 @@ function SectorHeatmap({
     [sectors],
   );
   const {
-    data: sectorDetail,
-    error: sectorDetailError,
-    isFetching: isSectorDetailFetching,
+    data: marketRows,
+    error: marketRowsError,
+    isFetching: isMarketRowsFetching,
   } = useQuery({
-    queryKey: ['sector-detail', selectedSector],
-    queryFn: () => fetchSectorDetail(selectedSector as string),
+    queryKey: ['markets-for-sector-detail'],
+    queryFn: fetchMarkets,
     enabled: Boolean(selectedSector),
-    refetchInterval: isMarketOpen ? 15_000 : false,
+    refetchInterval: isMarketOpen ? 60_000 : false,
     refetchOnWindowFocus: isMarketOpen,
   });
+  const selectedSectorSummary = selectedSector ? sectors?.[selectedSector] : undefined;
+  const sectorRows = useMemo(() => {
+    if (!selectedSector || !selectedSectorSummary) return [];
+
+    const sectorSymbols = new Set(selectedSectorSummary.symbols);
+
+    return (marketRows?.rows ?? [])
+      .filter((row) => sectorSymbols.has(row.symbol))
+      .map((row) => ({
+        symbol: row.symbol,
+        price: row.price,
+        change: row.change,
+        changePercent: row.changePercent,
+        volume: row.volume,
+        value: row.value,
+        state: (row.change ?? 0) > 0 ? 'up' : (row.change ?? 0) < 0 ? 'down' : 'unchanged',
+      }))
+      .sort((current, next) => (next.changePercent ?? -Infinity) - (current.changePercent ?? -Infinity));
+  }, [marketRows?.rows, selectedSector, selectedSectorSummary]);
 
   return (
     <section className="rounded border border-line bg-panel p-6">
@@ -250,10 +266,10 @@ function SectorHeatmap({
             <div>
               <h3 className="text-base font-semibold text-white">{titleCaseSector(selectedSector)}</h3>
               <p className="mt-1 text-sm text-gray-500">
-                {isSectorDetailFetching
+                {isMarketRowsFetching
                   ? 'Refreshing sector stocks'
-                  : sectorDetail
-                    ? `Updated ${new Date(sectorDetail.updatedAt).toLocaleTimeString()}`
+                  : marketRows
+                    ? `Updated ${new Date(marketRows.updatedAt).toLocaleTimeString()}`
                     : 'Loading sector stocks'}
               </p>
             </div>
@@ -266,16 +282,16 @@ function SectorHeatmap({
             </button>
           </div>
 
-          {sectorDetailError ? (
+          {marketRowsError ? (
             <div className="mt-4 rounded border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-100">
-              {sectorDetailError instanceof Error ? sectorDetailError.message : 'Unable to load sector stocks'}
+              {marketRowsError instanceof Error ? marketRowsError.message : 'Unable to load sector stocks'}
             </div>
           ) : null}
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <MiniMetric label="Up" value={String(sectorDetail?.summary.gainers ?? '--')} />
-            <MiniMetric label="Down" value={String(sectorDetail?.summary.losers ?? '--')} />
-            <MiniMetric label="Unchanged" value={String(sectorDetail?.summary.unchanged ?? '--')} />
+            <MiniMetric label="Up" value={String(selectedSectorSummary?.gainers ?? '--')} />
+            <MiniMetric label="Down" value={String(selectedSectorSummary?.losers ?? '--')} />
+            <MiniMetric label="Unchanged" value={String(selectedSectorSummary?.unchanged ?? '--')} />
           </div>
 
           <div className="mt-5 overflow-x-auto">
@@ -291,8 +307,8 @@ function SectorHeatmap({
                 </tr>
               </thead>
               <tbody>
-                {sectorDetail?.rows.length ? (
-                  sectorDetail.rows.map((row) => {
+                {sectorRows.length ? (
+                  sectorRows.map((row) => {
                     const toneClass =
                       row.state === 'up'
                         ? 'text-emerald-300'
@@ -307,10 +323,14 @@ function SectorHeatmap({
                             {row.symbol}
                           </Link>
                         </td>
-                        <td className="px-4 py-3 text-gray-200">{row.price.toFixed(2)}</td>
-                        <td className={`px-4 py-3 font-medium ${toneClass}`}>{row.change.toFixed(2)}</td>
-                        <td className={`px-4 py-3 font-medium ${toneClass}`}>{signedPercent(row.changePercent)}</td>
-                        <td className="px-4 py-3 text-gray-300">{compactNumber(row.volume)}</td>
+                        <td className="px-4 py-3 text-gray-200">{row.price === null ? '--' : row.price.toFixed(2)}</td>
+                        <td className={`px-4 py-3 font-medium ${toneClass}`}>
+                          {row.change === null ? '--' : row.change.toFixed(2)}
+                        </td>
+                        <td className={`px-4 py-3 font-medium ${toneClass}`}>
+                          {row.changePercent === null ? '--' : signedPercent(row.changePercent)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-300">{row.volume === null ? '--' : compactNumber(row.volume)}</td>
                         <td className={`py-3 pl-4 font-medium capitalize ${toneClass}`}>{row.state}</td>
                       </tr>
                     );
@@ -318,7 +338,7 @@ function SectorHeatmap({
                 ) : (
                   <tr>
                     <td className="py-6 text-gray-500" colSpan={6}>
-                      {isSectorDetailFetching ? 'Loading sector stocks' : 'No live stock rows available for this sector.'}
+                      {isMarketRowsFetching ? 'Loading sector stocks' : 'No live stock rows available for this sector.'}
                     </td>
                   </tr>
                 )}
