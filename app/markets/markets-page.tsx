@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { PortfolioStarButton } from '@/components/portfolio-star-button';
 import { useMarketStatus } from '@/hooks/useMarketStatus';
 
 interface MarketRow {
@@ -317,9 +318,12 @@ export function MarketsPage() {
                         className="cursor-pointer border-b border-line/80 transition hover:bg-white/[0.04]"
                       >
                         <td className="py-3 pl-0 pr-4 font-medium text-white">
-                          <Link href={`/stock?symbol=${encodeURIComponent(row.symbol)}`} className="hover:underline">
-                            {row.symbol}
-                          </Link>
+                          <div className="flex items-center gap-2">
+                            <PortfolioStarButton symbol={row.symbol} currentPrice={row.price} compact />
+                            <Link href={`/stock?symbol=${encodeURIComponent(row.symbol)}`} className="hover:underline">
+                              {row.symbol}
+                            </Link>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-gray-300">{formatNumber(row.price)}</td>
                         <td className={`px-4 py-3 font-medium ${row.change === null ? 'text-gray-500' : toneClass}`}>
